@@ -713,7 +713,7 @@ export default function App() {
     <div className="App" data-theme={theme}>
       <div className="main-image-header">
         <img 
-          src="/Main-Image.gif" 
+          src={process.env.PUBLIC_URL + "/Main-Image.gif"} 
           alt="Cogni-Flow Main Visual" 
           className="main-header-image" 
         />
