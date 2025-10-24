@@ -720,12 +720,13 @@ export default function App() {
       </div>
 
       <header className="header">
-        <div className="logo-space">
+        <div className="logo-container">
           <img 
-            src="/Header-logo.png" 
-            alt="Logo" 
-            style={{ width: '64px', height: '64px' }} 
+            alt="Cogni-Flow Logo" 
+            className="header-logo" 
+            src={process.env.PUBLIC_URL + "/Header-logo.png"} 
           />
+          <h1 className="header-title">CogniFlow</h1>
         </div>
         <div className="right">
           <button onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
