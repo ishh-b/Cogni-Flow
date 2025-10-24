@@ -2,7 +2,7 @@
   "name": "cogni-flow",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://botbean-pro.github.io/Cogni-Flow",
+  "homepage": "https://ishh-b.github.io/Cogni-Flow",
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
