@@ -725,6 +725,7 @@ export default function App() {
             alt="Cogni-Flow Logo" 
             className="header-logo" 
             src={process.env.PUBLIC_URL + "/Header-logo.png"} 
+            style={{ width: '26px', height: '26px' }}
           />
           <h1 className="header-title">CogniFlow</h1>
         </div>
