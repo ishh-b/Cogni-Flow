@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/Cogni-Flow/static/css/main.2ddaed32.css",
-    "main.js": "/Cogni-Flow/static/js/main.261d5ce8.js",
+    "main.css": "/Cogni-Flow/static/css/main.4afa245d.css",
+    "main.js": "/Cogni-Flow/static/js/main.ad39eced.js",
     "static/js/453.8d2b6fc5.chunk.js": "/Cogni-Flow/static/js/453.8d2b6fc5.chunk.js",
     "index.html": "/Cogni-Flow/index.html",
-    "main.2ddaed32.css.map": "/Cogni-Flow/static/css/main.2ddaed32.css.map",
-    "main.261d5ce8.js.map": "/Cogni-Flow/static/js/main.261d5ce8.js.map",
+    "main.4afa245d.css.map": "/Cogni-Flow/static/css/main.4afa245d.css.map",
+    "main.ad39eced.js.map": "/Cogni-Flow/static/js/main.ad39eced.js.map",
     "453.8d2b6fc5.chunk.js.map": "/Cogni-Flow/static/js/453.8d2b6fc5.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.2ddaed32.css",
-    "static/js/main.261d5ce8.js"
+    "static/css/main.4afa245d.css",
+    "static/js/main.ad39eced.js"
   ]
 }
