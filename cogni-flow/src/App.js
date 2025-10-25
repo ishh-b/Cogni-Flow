@@ -73,6 +73,7 @@ export default function App() {
   const [flashcardColors, setFlashcardColors] = useState({
     front: "",
     back: "",
+    text: "#000000",
   });
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -100,12 +101,14 @@ export default function App() {
       const rootStyles = getComputedStyle(document.documentElement);
       const defaultFront = (rootStyles.getPropertyValue("--theme-primary-accent") || "").trim() || "#5BB5A2";
       const defaultBack = (rootStyles.getPropertyValue("--theme-secondary-accent") || "").trim() || "#4DD0E1";
+      const defaultText = "#000000";
       setFlashcardColors((prev) => ({
         front: prev.front || defaultFront,
         back: prev.back || defaultBack,
+        text: prev.text || defaultText,
       }));
     } catch (_) {
-      setFlashcardColors((prev) => ({ front: prev.front || "#5BB5A2", back: prev.back || "#4DD0E1" }));
+      setFlashcardColors((prev) => ({ front: prev.front || "#5BB5A2", back: prev.back || "#4DD0E1", text: prev.text || "#000000" }));
     }
   }, [theme]);
 
@@ -1028,8 +1031,9 @@ export default function App() {
                 padding: '20px',
                 minHeight: '300px',
                 // Expose chosen colors to CSS via variables
-                ['--flashcard-front-bg']: flashcardColors.front,
-                ['--flashcard-back-bg']: flashcardColors.back,
+                '--flashcard-front-bg': flashcardColors.front,
+                '--flashcard-back-bg': flashcardColors.back,
+                '--flashcard-text': flashcardColors.text,
               }}
                 onClick={(e) => {
                   const card = e.target.closest(".flashcard");
@@ -1175,6 +1179,7 @@ export default function App() {
                   className="hex-input"
                   maxLength="7"
                 />
+                <p className="form-help">Background color used when the card shows the question.</p>
               </div>
               <div className="color-picker-control">
                 <label htmlFor="fcBack">Flashcard Answer (Back)</label>
@@ -1202,6 +1207,35 @@ export default function App() {
                   className="hex-input"
                   maxLength="7"
                 />
+                <p className="form-help">Background color used when the card is flipped to show the answer.</p>
+              </div>
+              <div className="color-picker-control">
+                <label htmlFor="fcText">Flashcard Text</label>
+                <input
+                  id="fcText"
+                  type="color"
+                  value={flashcardColors.text}
+                  onChange={(e) =>
+                    setFlashcardColors({
+                      ...flashcardColors,
+                      text: e.target.value,
+                    })
+                  }
+                  title="Select the text color for both sides of the flashcard."
+                />
+                <input
+                  type="text"
+                  value={flashcardColors.text}
+                  onChange={(e) =>
+                    setFlashcardColors({
+                      ...flashcardColors,
+                      text: e.target.value,
+                    })
+                  }
+                  className="hex-input"
+                  maxLength="7"
+                />
+                <p className="form-help">Text color applied to both question and answer sides.</p>
               </div>
             </div>
             <div className="actions">
