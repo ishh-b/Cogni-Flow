@@ -944,13 +944,13 @@ export default function App() {
                 </div>
                 <div 
                   className="content-display"
-                  style={{ 
-                    textAlign: settings.textAlign,
-                    padding: '20px',
-                    minHeight: '300px',
-                    color: smartNotesColors.text,
-                    background: smartNotesColors.background,
-                  }} 
+                style={{ 
+                  '--content-align': settings.textAlign,
+                  padding: '20px',
+                  minHeight: '300px',
+                  color: smartNotesColors.text,
+                  background: smartNotesColors.background,
+                }} 
                   dangerouslySetInnerHTML={{ __html: notesContent }} 
                 />
               </>
@@ -977,7 +977,7 @@ export default function App() {
             ) : mindmapContent ? (
               <div 
                 className="content-display"
-                style={{ padding: '20px', minHeight: '300px', color: '#000000', textAlign: settings.textAlign }}
+                style={{ padding: '20px', minHeight: '300px', color: '#000000', '--content-align': settings.textAlign }}
                 dangerouslySetInnerHTML={{ __html: mindmapContent }} 
               />
             ) : (
@@ -1002,7 +1002,7 @@ export default function App() {
             ) : quizContent ? (
               <div 
                 className="content-display"
-                style={{ padding: '20px', minHeight: '300px', color: '#000000', textAlign: settings.textAlign }} 
+                style={{ padding: '20px', minHeight: '300px', color: '#000000', '--content-align': settings.textAlign }} 
                 dangerouslySetInnerHTML={{ __html: quizContent }} 
               />
             ) : (
