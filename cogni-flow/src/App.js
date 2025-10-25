@@ -1146,64 +1146,9 @@ export default function App() {
         <div className="modal-bg" onClick={() => setShowColorPopup(false)}>
           <div className="modal color-settings-modal" onClick={(e) => e.stopPropagation()}>
             <h2>🎨 Color Settings</h2>
-            <p className="form-help">
-              Choose colors for Notes and Flashcards.
-            </p>
+            <p className="form-help">Choose colors for Flashcards.</p>
             <div className="color-picker-row">
-              <div className="color-picker-control">
-                <label htmlFor="bgColor">Background</label>
-                <input
-                  id="bgColor"
-                  type="color"
-                  value={smartNotesColors.background}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      background: e.target.value,
-                    })
-                  }
-                  title="Select the background color for the notes."
-                />
-                <input
-                  type="text"
-                  value={smartNotesColors.background}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      background: e.target.value,
-                    })
-                  }
-                  className="hex-input"
-                  maxLength="7"
-                />
-              </div>
-              <div className="color-picker-control">
-                <label htmlFor="textColor">Text</label>
-                <input
-                  id="textColor"
-                  type="color"
-                  value={smartNotesColors.text}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      text: e.target.value,
-                    })
-                  }
-                  title="Select the text color for the notes."
-                />
-                <input
-                  type="text"
-                  value={smartNotesColors.text}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      text: e.target.value,
-                    })
-                  }
-                  className="hex-input"
-                  maxLength="7"
-                />
-              </div>
+              
               <div className="color-picker-control">
                 <label htmlFor="fcFront">Flashcard Question (Front)</label>
                 <input
