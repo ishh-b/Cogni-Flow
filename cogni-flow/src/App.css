@@ -4674,9 +4674,10 @@ a:hover {
 }
 
 .color-picker-row {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  align-items: start;
   margin-bottom: 24px;
 }
 
