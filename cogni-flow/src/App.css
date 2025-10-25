@@ -4803,6 +4803,31 @@ a:hover {
   transform: scale(1.1);
 }
 
+/* Drag & Drop zone adjacent to Choose File */
+.drop-zone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 14px;
+  border: 2px dashed #cfd8dc;
+  color: #546e7a;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  user-select: none;
+}
+
+.drop-zone:hover {
+  background: #f7f9fa;
+}
+
+.drop-zone.dragover {
+  border-color: #4DD0E1;
+  background: #e0f7fa;
+  color: #006064;
+}
+
 /* Ensure the button and filename chip align perfectly in the flex row */
 .upload-controls .custom-file-upload,
 .upload-controls .file-info {
