@@ -70,6 +70,10 @@ export default function App() {
     background: "#ffffff",
     text: "#2C3E50",
   });
+  const [flashcardColors, setFlashcardColors] = useState({
+    front: "",
+    back: "",
+  });
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -88,6 +92,21 @@ export default function App() {
 
   useEffect(() => {
     document.body.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  // Initialize flashcard color defaults from current CSS variables
+  useEffect(() => {
+    try {
+      const rootStyles = getComputedStyle(document.documentElement);
+      const defaultFront = (rootStyles.getPropertyValue("--theme-primary-accent") || "").trim() || "#5BB5A2";
+      const defaultBack = (rootStyles.getPropertyValue("--theme-secondary-accent") || "").trim() || "#4DD0E1";
+      setFlashcardColors((prev) => ({
+        front: prev.front || defaultFront,
+        back: prev.back || defaultBack,
+      }));
+    } catch (_) {
+      setFlashcardColors((prev) => ({ front: prev.front || "#5BB5A2", back: prev.back || "#4DD0E1" }));
+    }
   }, [theme]);
 
   const resetSpeechControls = useCallback(() => {
@@ -993,7 +1012,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === "flashcard" && (
+      {activeTab === "flashcard" && (
           <section className="tab-panel active">
             {isGenerating ? (
               <div style={{ textAlign: 'center', padding: '60px' }}>
@@ -1004,8 +1023,14 @@ export default function App() {
               </div>
             ) : flashcardContent ? (
               <div
-                className="flashcard-host content-display"
-                style={{ padding: '20px', minHeight: '300px' }}
+              className="flashcard-host content-display"
+              style={{
+                padding: '20px',
+                minHeight: '300px',
+                // Expose chosen colors to CSS via variables
+                ['--flashcard-front-bg']: flashcardColors.front,
+                ['--flashcard-back-bg']: flashcardColors.back,
+              }}
                 onClick={(e) => {
                   const card = e.target.closest(".flashcard");
                   if (card) card.classList.toggle("flipped");
@@ -1122,7 +1147,7 @@ export default function App() {
           <div className="modal color-settings-modal" onClick={(e) => e.stopPropagation()}>
             <h2>🎨 Color Settings</h2>
             <p className="form-help">
-              Choose the colors for the Smart Notes content area.
+              Choose colors for Notes and Flashcards.
             </p>
             <div className="color-picker-row">
               <div className="color-picker-control">
@@ -1173,6 +1198,60 @@ export default function App() {
                     setSmartNotesColors({
                       ...smartNotesColors,
                       text: e.target.value,
+                    })
+                  }
+                  className="hex-input"
+                  maxLength="7"
+                />
+              </div>
+              <div className="color-picker-control">
+                <label htmlFor="fcFront">Flashcard Question (Front)</label>
+                <input
+                  id="fcFront"
+                  type="color"
+                  value={flashcardColors.front}
+                  onChange={(e) =>
+                    setFlashcardColors({
+                      ...flashcardColors,
+                      front: e.target.value,
+                    })
+                  }
+                  title="Select the question side background."
+                />
+                <input
+                  type="text"
+                  value={flashcardColors.front}
+                  onChange={(e) =>
+                    setFlashcardColors({
+                      ...flashcardColors,
+                      front: e.target.value,
+                    })
+                  }
+                  className="hex-input"
+                  maxLength="7"
+                />
+              </div>
+              <div className="color-picker-control">
+                <label htmlFor="fcBack">Flashcard Answer (Back)</label>
+                <input
+                  id="fcBack"
+                  type="color"
+                  value={flashcardColors.back}
+                  onChange={(e) =>
+                    setFlashcardColors({
+                      ...flashcardColors,
+                      back: e.target.value,
+                    })
+                  }
+                  title="Select the answer side background."
+                />
+                <input
+                  type="text"
+                  value={flashcardColors.back}
+                  onChange={(e) =>
+                    setFlashcardColors({
+                      ...flashcardColors,
+                      back: e.target.value,
                     })
                   }
                   className="hex-input"

@@ -2832,7 +2832,7 @@ button:disabled {
 }
 
 .flashcard {
-  background: var(--theme-primary-accent);
+  background: var(--flashcard-front-bg, var(--theme-primary-accent));
   border-radius: var(--radius-lg);
   width: 100%;
   height: 200px;
@@ -2898,15 +2898,15 @@ button:disabled {
 }
 
 .card-front {
-  color: var(--color-btn-primary-text) !important;
+  color: #000000 !important; /* always black */
   font-weight: var(--font-weight-bold);
-  background: var(--theme-primary-accent);
+  background: var(--flashcard-front-bg, var(--theme-primary-accent));
 }
 
 .card-back {
-  color: var(--color-btn-primary-text) !important;
+  color: #000000 !important; /* always black */
   transform: rotateY(180deg);
-  background: var(--theme-secondary-accent);
+  background: var(--flashcard-back-bg, var(--theme-secondary-accent));
   font-weight: var(--font-weight-medium);
 }
 
