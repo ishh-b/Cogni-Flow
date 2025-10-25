@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import "./App.css";
+import * as pdfjsLib from "pdfjs-dist";
 
 // Firebase Configuration
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 const firebaseConfig = {
   apiKey: "AIzaSyDyy8AM0mc9oLi8ixywP4qo2dpJp2TYG6o",
@@ -67,6 +70,7 @@ export default function App() {
     background: "#ffffff",
     text: "#2C3E50",
   });
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("cogniSet");
@@ -300,16 +304,50 @@ export default function App() {
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
     setFileInput(file);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target.result;
-      setTextInput(content);
-    };
-    reader.onerror = () => {
-      showErrorDialog("Failed to read file");
-    };
-    reader.readAsText(file);
+
+    if (file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const pdfData = new Uint8Array(event.target.result);
+          const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+          let textContent = "";
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const text = await page.getTextContent();
+            textContent += text.items.map((s) => s.str).join(" ");
+          }
+          setTextInput(textContent);
+        } catch (error) {
+          console.error("Failed to read PDF:", error);
+          showErrorDialog("Failed to read the PDF file. It might be corrupted or protected.");
+        }
+      };
+      reader.onerror = () => {
+        showErrorDialog("Failed to read file");
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target.result;
+        setTextInput(content);
+      };
+      reader.onerror = () => {
+        showErrorDialog("Failed to read file");
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleClearFile = () => {
+    setFileInput(null);
+    setTextInput("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const callGeminiAPI = async (endpoint, prompt) => {
@@ -755,7 +793,24 @@ export default function App() {
               <h3>Upload Document</h3>
               <p>Upload a document to generate notes, mind maps, quizzes, and flashcards.</p>
               <div className="upload-controls">
-                <input type="file" onChange={handleFileChange} accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx" />
+                <label htmlFor="file-upload" className="custom-file-upload">
+                  Choose File
+                </label>
+                <input
+                  id="file-upload"
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx"
+                />
+                {fileInput && (
+                  <div className="file-info">
+                    <span>{fileInput.name}</span>
+                    <button onClick={handleClearFile} className="clear-file-btn">
+                      &times;
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <input
