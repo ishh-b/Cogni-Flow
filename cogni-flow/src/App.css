@@ -2910,6 +2910,13 @@ button:disabled {
   font-weight: var(--font-weight-medium);
 }
 
+/* Force text color for all descendants within flashcards, overriding inline styles */
+.flashcard, .flashcard *,
+.flashcard .card-front, .flashcard .card-front *,
+.flashcard .card-back, .flashcard .card-back * {
+  color: var(--flashcard-text, #000000) !important;
+}
+
 .modal-bg {
   position: fixed;
   top: 0;
