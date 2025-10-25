@@ -751,7 +751,13 @@ export default function App() {
               onChange={(e) => setTextInput(e.target.value)}
               placeholder="Paste your text here and watch the magic happen! Upload a file or enter a link to get started..."
             />
-            <input type="file" onChange={handleFileChange} accept=".txt,.md" />
+            <div className="upload-section">
+              <h3>Upload Document</h3>
+              <p>Upload a document to generate notes, mind maps, quizzes, and flashcards.</p>
+              <div className="upload-controls">
+                <input type="file" onChange={handleFileChange} accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx" />
+              </div>
+            </div>
             <input
               type="url"
               value={urlInput}
