@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import "./App.css";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -30,10 +30,20 @@ try {
 // Get a new key at: https://makersuite.google.com/app/apikey
 // Consider using environment variables for better security in production.
 const apiKey = "AIzaSyAaiJHfFeKRrF8Wy5rqUCwhN2l3-EEi-2Q"; 
-const API_ENDPOINTS = [
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, // Fallback to 1.5-pro if 2.5-flash fails
+
+// Build a robust list of candidate endpoints across API versions and model aliases
+const API_MODEL_CANDIDATES = [
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-exp",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+  "gemini-1.5-pro-latest",
+  "gemini-1.5-pro",
 ];
+const API_VERSIONS = ["v1beta", "v1"]; // some keys only enable models on v1
+const API_ENDPOINTS = API_VERSIONS.flatMap(v =>
+  API_MODEL_CANDIDATES.map(m => `https://generativelanguage.googleapis.com/${v}/models/${m}:generateContent?key=${apiKey}`)
+);
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("input");
@@ -43,6 +53,12 @@ export default function App() {
   const [fileInput, setFileInput] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState("");
+  const [genProgress, setGenProgress] = useState({
+    notes: 'idle',
+    mindmap: 'idle',
+    quiz: 'idle',
+    flashcard: 'idle'
+  });
   const [notesContent, setNotesContent] = useState("");
   const [mindmapContent, setMindmapContent] = useState("");
   const [quizContent, setQuizContent] = useState("");
@@ -56,6 +72,8 @@ export default function App() {
     letterSpacing: 0,
     bionic: false,
   });
+  const [showColorPopup, setShowColorPopup] = useState(false);
+  const [flashcardColors, setFlashcardColors] = useState({ front: "", back: "", text: "#000000" });
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [speechSpeed, setSpeechSpeed] = useState(1);
@@ -65,12 +83,26 @@ export default function App() {
   const speechSentencesRef = useRef([]);
   const currentUtteranceRef = useRef(null);
   const endFallbackTimerRef = useRef(null);
-  const [showColorPopup, setShowColorPopup] = useState(false);
   const [smartNotesColors, setSmartNotesColors] = useState({
     background: "#ffffff",
     text: "#2C3E50",
   });
   const fileInputRef = useRef(null);
+  const notesContentRef = useRef(null);
+  const mindmapContentRef = useRef(null);
+  const quizContentRef = useRef(null);
+  const inputTextRef = useRef(null);
+  const handleJumpToInput = useCallback(() => {
+    setActiveTab('input');
+    // Wait for tab to render
+    setTimeout(() => {
+      if (inputTextRef.current) {
+        inputTextRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        inputTextRef.current.focus();
+      }
+    }, 60);
+  }, []);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("cogniSet");
@@ -87,6 +119,57 @@ export default function App() {
 
   useEffect(() => {
     document.body.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  // ----- PDF download helpers -----
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.body.appendChild(s);
+  });
+
+  const ensureHtml2Pdf = async () => {
+    if (!window.html2pdf) {
+      await loadScript('https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js');
+    }
+  };
+
+  const downloadAsPdf = async (element, filename) => {
+    if (!element) {
+      showErrorDialog('Nothing to download. Generate content first.');
+      return;
+    }
+    try {
+      await ensureHtml2Pdf();
+      const opt = {
+        margin: 10,
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      };
+      window.html2pdf().set(opt).from(element).save();
+    } catch (e) {
+      showErrorDialog('Failed to export PDF', e);
+    }
+  };
+
+  // Initialize default flashcard colors from CSS variables
+  useEffect(() => {
+    const styles = getComputedStyle(document.documentElement);
+    const primary = (styles.getPropertyValue('--theme-primary-accent') || '#5BB5A2').trim();
+    const secondary = (styles.getPropertyValue('--theme-secondary-accent') || '#4DD0E1').trim();
+    setFlashcardColors(prev => ({
+      front: prev.front || primary,
+      back: prev.back || secondary,
+      text: prev.text || '#000000',
+    }));
   }, [theme]);
 
   const resetSpeechControls = useCallback(() => {
@@ -228,6 +311,63 @@ export default function App() {
     return text;
   };
 
+  // Heuristic extraction of the main article content from a full web page HTML
+  const extractMainContentHtmlFromPage = (rawHtml) => {
+    try {
+      if (!rawHtml || typeof rawHtml !== 'string') return rawHtml;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawHtml, 'text/html');
+
+      // 1) Remove obvious noise elements
+      const noiseSelectors = [
+        'script', 'style', 'noscript', 'iframe', 'svg', 'canvas', 'form',
+        'header', 'footer', 'aside', 'nav',
+        'button', '.newsletter', '.subscribe', '.subscription', '.signup', '.paywall',
+        '.breadcrumbs', '.breadcrumb', '.pagination', '.pager', '.share', '.social'
+      ];
+      doc.querySelectorAll(noiseSelectors.join(',')).forEach((el) => el.remove());
+
+      // 2) Remove elements whose id/class looks like ads or policy banners
+      const badTokens = [
+        'ad', 'ads', 'advert', 'banner', 'promo', 'cookie', 'consent', 'gdpr', 'policy', 'terms',
+        'related', 'recommend', 'sidebar', 'nav', 'header', 'footer', 'share', 'social'
+      ];
+      doc.querySelectorAll('[id], [class]').forEach((el) => {
+        const signature = ((el.id || '') + ' ' + (el.className || '')).toLowerCase();
+        if (badTokens.some((t) => signature.includes(t))) {
+          // Avoid removing the core article containers by keeping large blocks
+          const textLen = (el.textContent || '').trim().length;
+          if (textLen < 1200) el.remove();
+        }
+      });
+
+      // 3) Pick the best candidate node by text length
+      const candidates = Array.from(
+        doc.querySelectorAll(
+          'article, main, [role="main"], .article, .post, .post-content, .entry-content, #content, .content, .story, .article-body, .content-body'
+        )
+      );
+      const pickBestByText = (nodes) =>
+        nodes
+          .map((el) => ({ el, len: (el.innerText || '').trim().length }))
+          .sort((a, b) => b.len - a.len)[0]?.el;
+
+      let best = pickBestByText(candidates);
+      if (!best) {
+        const divs = Array.from(doc.querySelectorAll('div'));
+        best = pickBestByText(divs);
+      }
+      if (!best) return rawHtml;
+
+      // Return a minimal container HTML for downstream extraction
+      const container = doc.createElement('div');
+      container.appendChild(best.cloneNode(true));
+      return container.innerHTML;
+    } catch (e) {
+      return rawHtml; // Fail open
+    }
+  };
+
   const fetchUrlContent = async (url) => {
     console.log("🔍 Attempting to fetch URL:", url);
     
@@ -242,7 +382,8 @@ export default function App() {
       });
       if (directResponse.ok) {
         const textContent = await directResponse.text();
-        const extractedContent = extractTextFromContent(textContent);
+        const mainHtml = extractMainContentHtmlFromPage(textContent);
+        const extractedContent = extractTextFromContent(mainHtml);
         console.log("✅ Direct fetch successful, extracted length:", extractedContent?.length);
         if (extractedContent && extractedContent.length > 100) return extractedContent;
       }
@@ -286,7 +427,8 @@ export default function App() {
         }
         
         if (responseData) {
-          const extractedContent = extractTextFromContent(responseData);
+          const mainHtml = extractMainContentHtmlFromPage(responseData);
+          const extractedContent = extractTextFromContent(mainHtml);
           console.log(`✅ ${proxy.name} successful! Extracted ${extractedContent?.length} characters`);
           if (extractedContent && extractedContent.length > 50) {
             return extractedContent;
@@ -307,6 +449,58 @@ export default function App() {
 
     setFileInput(file);
 
+    if (file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const pdfData = new Uint8Array(event.target.result);
+          const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+          const concurrency = 4;
+          let current = 1;
+          const results = new Array(pdf.numPages);
+          const worker = async () => {
+            while (current <= pdf.numPages) {
+              const pageIndex = current++;
+              const page = await pdf.getPage(pageIndex);
+              const text = await page.getTextContent();
+              results[pageIndex - 1] = text.items.map((s) => s.str).join(" ");
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(concurrency, pdf.numPages) }, worker));
+          setTextInput(results.join(" "));
+        } catch (error) {
+          if (process.env.NODE_ENV !== 'production') console.error("Failed to read PDF:", error);
+          showErrorDialog("Failed to read the PDF file. It might be corrupted or protected.");
+        }
+      };
+      reader.onerror = () => {
+        showErrorDialog("Failed to read file");
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target.result;
+        setTextInput(content);
+      };
+      reader.onerror = () => {
+        showErrorDialog("Failed to read file");
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleClearFile = () => {
+    setFileInput(null);
+    setTextInput("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const processFile = async (file) => {
+    if (!file) return;
+    setFileInput(file);
     if (file.type === "application/pdf") {
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -342,18 +536,14 @@ export default function App() {
     }
   };
 
-  const handleClearFile = () => {
-    setFileInput(null);
-    setTextInput("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
   const callGeminiAPI = async (endpoint, prompt) => {
-    console.log("🔄 Calling Gemini API...");
-    console.log("📍 Endpoint:", endpoint.split('?')[0]); // Log without API key
-    
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("🔄 Calling Gemini API...");
+      console.log("📍 Endpoint:", endpoint.split('?')[0]); // Log without API key
+    }
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), 45000); // 45s safety timeout
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -361,12 +551,13 @@ export default function App() {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { 
           temperature: 0.25, 
-          maxOutputTokens: 8192,
+          maxOutputTokens: 4096,
           topP: 0.95,
           topK: 40
         },
       }),
-    });
+      signal: abortController.signal,
+    }).finally(() => clearTimeout(timeout));
     
     if (!response.ok) {
       let errorText = await response.text();
@@ -375,10 +566,10 @@ export default function App() {
       try {
         const errorJson = JSON.parse(errorText);
         errorDetails = errorJson.error?.message || errorText;
-        console.error("❌ API Error Response:", errorJson);
+      if (process.env.NODE_ENV !== 'production') console.error("❌ API Error Response:", errorJson);
       } catch {
         errorDetails = errorText.substring(0, 200);
-        console.error("❌ API Error:", response.status, errorText);
+        if (process.env.NODE_ENV !== 'production') console.error("❌ API Error:", response.status, errorText);
       }
       
       throw new Error(`API failed: ${response.status} - ${errorDetails}`);
@@ -388,7 +579,7 @@ export default function App() {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!text) {
-      console.error("❌ No text in API response:", data);
+      if (process.env.NODE_ENV !== 'production') console.error("❌ No text in API response:", data);
       throw new Error("No content generated");
     }
     
@@ -442,108 +633,59 @@ export default function App() {
       console.log("📄 Processing text, length:", truncatedText.length);
       
       const prompts = {
-        notes: `Create comprehensive study notes in HTML format. IMPORTANT: Return ONLY the HTML code, no explanations or markdown. Use proper HTML tags like <div>, <h2>, <h3>, <p>, <ul>, <li>, <strong>. Make it well-structured and easy to read. Add inline styles for colors if needed. Content:\n\n${truncatedText}`,
-        
-        mindmap: `Create an HTML mind map with nested <div> elements. IMPORTANT: Return ONLY the HTML code, no explanations. Use inline CSS for styling (colors, borders, padding, margins). Structure it as a visual hierarchy with a main topic and branches. Content:\n\n${truncatedText}`,
-        
+        notes: `Create comprehensive study notes in HTML format. STRICT RULES: 1) Return ONLY HTML (no markdown, no explanations); 2) Use semantic structure with <h2> section headings and <h3> subheadings, followed by <p> paragraphs and <ul><li> bullets; 3) Include at least 5-10 bullet points across sections; 4) Do not repeat the prompt text verbatim—summarize and elaborate; 5) Highlight 5–10 critical terms or definitions using <mark> (do not overuse); 6) Use <strong> to emphasize important phrases inside bullets; 7) No external links or policy text; 8) Avoid empty sections. Content:\n\n${truncatedText}`,
+
+        mindmap: `Create a clean, compact, COLORED HTML mind map. STRICT RULES:\n\n1) Return ONLY HTML (no scripts).\n2) Structure: <div class=\"mm-root\"><h2>Root Topic</h2><div class=\"mm-branches\"> ... nested <div class=\"mm-node\"><h3>Branch</h3><ul><li>subpoint</li>...</ul></div> ... </div></div>.\n3) Max 4 top-level branches; each branch ≤ 5 child bullets; keep each label ≤ 10 words.\n4) Include a small <style> block at the very top that defines a pleasant color palette and applies it to branches. Use these CSS rules (use exactly these class names):\n<style>\n.mm-root{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:960px;margin:0 auto;padding:12px}\n.mm-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}\n.mm-node{background:#fff;border:1px solid #ddd;border-left-width:6px;border-radius:10px;padding:10px 12px}\n.mm-node h3{margin:0 0 6px 0;font-size:16px}\n.mm-node ul{margin:0;padding-left:18px}\n/* color tokens applied to top-level nodes */\n.mm-c1{--mm-bg:#FFE9E3;--mm-border:#FF6B6B}.mm-c2{--mm-bg:#E6F7FF;--mm-border:#1E90FF}.mm-c3{--mm-bg:#EAFBE7;--mm-border:#2DB84C}.mm-c4{--mm-bg:#FFF6CC;--mm-border:#FFC107}\n/* apply vars */\n.mm-node.mm-c1,.mm-node.mm-c2,.mm-node.mm-c3,.mm-node.mm-c4{background:var(--mm-bg);border-left-color:var(--mm-border)}\n/* children inherit colored border only for subtlety */\n.mm-node .mm-node{background:#fff;border-left-color:var(--mm-border)}\n</style>\n5) Assign classes cyclically to the TOP-LEVEL branch nodes only: mm-c1, mm-c2, mm-c3, mm-c4 in order.\n6) Avoid repeating the same idea across branches; focus on key concepts and relationships.\n\nContent:\n\n${truncatedText}`,
+
         quiz: `Generate 10 multiple-choice questions in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO event handlers (like onclick); 3) For each question, use <div class="q"> with the question text in <strong>, followed by a <ul> of four <li> options labeled A) B) C) D); 4) Immediately after the options, include <p class="answer"><strong>Answer:</strong> X)</p> where X is the correct option letter. Use only semantic HTML. No comments, no explanations after the HTML. Content:\n\n${truncatedText}`,
         
         flashcard: `Create 10 flashcards in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO inline event handlers; 3) Structure each card as <div class="flashcard"><div class="card-front">Q...</div><div class="card-back">A...</div></div>; 4) Do NOT include any CSS transforms or rotation; 5) Keep content concise. Content:\n\n${truncatedText}`
       };
 
-      for (const [type, prompt] of Object.entries(prompts)) {
-        setGenStatus(`Generating ${type}... (may take 10-30 seconds)`);
-        let success = false;
+      const types = Object.entries(prompts);
+      const generateOne = async ([type, prompt]) => {
+        setGenProgress((p) => ({ ...p, [type]: 'running' }));
         let lastError = null;
-        
         for (let i = 0; i < API_ENDPOINTS.length; i++) {
           const endpoint = API_ENDPOINTS[i];
           try {
-            console.log(`\n🔄 Trying endpoint ${i + 1}/${API_ENDPOINTS.length} for ${type}`);
             const response = await callGeminiAPI(endpoint, prompt);
-            
-            if (!response || response.length < 100) {
-              console.warn(`⚠️ Response too short for ${type}:`, response?.length);
+            if (!response || response.length < 100) continue;
+            const cleanedResponse = cleanHtmlResponse(response);
+            if (!cleanedResponse || cleanedResponse.length < 50) throw new Error('Too short');
+            switch (type) {
+              case 'notes': {
+                const sanitizedNotes = sanitizeHtmlForDisplay(cleanedResponse);
+                setNotesContent(sanitizedNotes);
+                break;
+              }
+              case 'mindmap': setMindmapContent(cleanedResponse); break;
+              case 'quiz': setQuizContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
+              case 'flashcard': setFlashcardContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
+              default: break;
+            }
+            setGenProgress((p) => ({ ...p, [type]: 'done' }));
+            return true;
+          } catch (e) {
+            const msg = (e?.message || '').toLowerCase();
+            // Skip to next endpoint on model-not-found/unsupported
+            if (msg.includes('404') || msg.includes('not found') || msg.includes('not supported')) {
+              lastError = e;
               continue;
             }
-            
-            const cleanedResponse = cleanHtmlResponse(response);
-            
-            console.log(`\n========================================`);
-            console.log(`✅ GENERATED ${type.toUpperCase()}`);
-            console.log(`   Cleaned Length: ${cleanedResponse.length}`);
-            console.log(`   Preview: ${cleanedResponse.substring(0, 300)}...`);
-            console.log(`========================================\n`);
-            
-            if (!cleanedResponse || cleanedResponse.length < 50) {
-              console.error(`❌ Cleaned ${type} too short!`);
-              throw new Error(`Generated ${type} is too short or empty`);
-            }
-            
-            // Set content with explicit logging
-            switch (type) {
-              case "notes": 
-                console.log("💾 Setting NOTES content...");
-                setNotesContent(cleanedResponse);
-                console.log("✅ Notes content SET successfully");
-                break;
-              case "mindmap": 
-                console.log("💾 Setting MINDMAP content...");
-                setMindmapContent(cleanedResponse);
-                console.log("✅ Mindmap content SET successfully");
-                break;
-              case "quiz": 
-                console.log("💾 Setting QUIZ content...");
-                {
-                  const sanitizedQuiz = sanitizeHtmlForDisplay(cleanedResponse);
-                  setQuizContent(sanitizedQuiz);
-                }
-                console.log("✅ Quiz content SET successfully");
-                break;
-              case "flashcard": 
-                console.log("💾 Setting FLASHCARD content...");
-                {
-                  const sanitizedFlash = sanitizeHtmlForDisplay(cleanedResponse);
-                  setFlashcardContent(sanitizedFlash);
-                }
-                console.log("✅ Flashcard content SET successfully");
-                break;
-              default:
-                break;
-            }
-            
-            success = true;
-            break;
-          } catch (error) {
-            console.error(`❌ Endpoint ${i + 1} failed for ${type}:`, error);
-            lastError = error;
-            if (i < API_ENDPOINTS.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            }
+            lastError = e;
           }
         }
-        
-        if (!success) {
-          const errorMsg = lastError?.message || 'Unknown error';
-          if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-            throw new Error(
-              `API Key Error: Your Google Gemini API key appears to be invalid or expired.\n\n` +
-              `🔧 How to fix:\n` +
-              `1. Go to: https://makersuite.google.com/app/apikey\n` +
-              `2. Create a new API key\n` +
-              `3. Replace the key in App.js (line 28)\n\n` +
-              `Technical details: ${errorMsg}`
-            );
-          }
-          throw new Error(`Failed to generate ${type}. Error: ${errorMsg}`);
-        }
-        
-        // Small delay between content types
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+        setGenProgress((p) => ({ ...p, [type]: 'error' }));
+        throw lastError || new Error('Unknown error');
+      };
+
+      // Run all generations in parallel
+      await Promise.all(types.map(generateOne));
       
       console.log("🎉 ALL CONTENT GENERATED SUCCESSFULLY!");
       setGenStatus("✅ All materials generated successfully!");
+      setGenProgress({ notes: 'done', mindmap: 'done', quiz: 'done', flashcard: 'done' });
       setActiveTab("notes");
       setTimeout(() => setGenStatus(""), 3000);
       
@@ -749,12 +891,32 @@ export default function App() {
 
   return (
     <div className="App" data-theme={theme}>
-      <div className="main-image-header">
+      <div className="main-image-header" style={{ position: 'relative' }}>
         <img 
           src={process.env.PUBLIC_URL + "/Main-Image.gif"} 
           alt="Cogni-Flow Main Visual" 
           className="main-header-image" 
         />
+        <button
+          onClick={handleJumpToInput}
+          className="scroll-to-input-btn"
+          style={{
+            position: 'absolute',
+            bottom: '12px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(135deg, #5BB5A2 0%, #4DD0E1 100%)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '9999px',
+            padding: '10px 16px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}
+          title="Scroll down"
+        >
+          ↓ Scroll Down
+        </button>
       </div>
 
       <header className="header">
@@ -785,6 +947,7 @@ export default function App() {
         {activeTab === "input" && (
           <section className="tab-panel active">
             <textarea
+              ref={inputTextRef}
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               placeholder="Paste your text here and watch the magic happen! Upload a file or enter a link to get started..."
@@ -792,6 +955,10 @@ export default function App() {
             <div className="upload-section">
               <h3>Upload Document</h3>
               <p>Upload a document to generate notes, mind maps, quizzes, and flashcards.</p>
+              <p style={{ fontSize: '13px', color: '#4b5563', marginTop: '6px' }}>
+                Pro tip: results are faster and often better with smaller files (≤ 10–20 pages).
+                For long PDFs, split into sections and generate per chapter.
+              </p>
               <div className="upload-controls">
                 <label htmlFor="file-upload" className="custom-file-upload">
                   Choose File
@@ -800,9 +967,28 @@ export default function App() {
                   id="file-upload"
                   type="file"
                   ref={fileInputRef}
-                  onChange={handleFileChange}
+                  onChange={(e) => processFile(e.target.files[0])}
                   accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx"
                 />
+                <div
+                  className={"drop-zone" + (isDragging ? " dragover" : "")}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                    const files = e.dataTransfer?.files;
+                    if (files && files.length > 0) processFile(files[0]);
+                  }}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}
+                >
+                  or drag & drop
+                </div>
                 {fileInput && (
                   <div className="file-info">
                     <span>{fileInput.name}</span>
@@ -839,14 +1025,15 @@ export default function App() {
 
         {activeTab === "notes" && (
           <section className="tab-panel active">
-            {isGenerating ? (
-              <div style={{ textAlign: 'center', padding: '60px' }}>
-                <div className="loading-spinner"></div>
-                <p style={{ marginTop: '24px', fontSize: '20px', fontWeight: 'bold' }}>
-                  {genStatus || '⏳ Generating your notes...'}
-                </p>
-                <p style={{ fontSize: '16px', opacity: 0.8, marginTop: '12px' }}>
-                  Please wait 30-90 seconds. Stay on this page!
+            {isGenerating && genProgress.notes !== 'done' ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="loading-spinner" />
+                <p style={{ marginTop: '12px', fontWeight: '600' }}>Generating materials...</p>
+                <p style={{ marginTop: '8px', opacity: 0.9, fontSize: '14px' }}>
+                  Notes: {genProgress.notes} {'  •  '}
+                  Mind Map: {genProgress.mindmap} {'  •  '}
+                  Quiz: {genProgress.quiz} {'  •  '}
+                  Flashcards: {genProgress.flashcard}
                 </p>
               </div>
             ) : notesContent ? (
@@ -872,10 +1059,14 @@ export default function App() {
                     <span>{speechSpeed.toFixed(1)}x</span>
                   </div>
                 </div>
+                <div className="notes-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                  <button onClick={() => downloadAsPdf(notesContentRef.current, 'Smart-Notes.pdf')}>📥 Download PDF</button>
+                </div>
                 <div 
                   className="content-display"
+                  ref={notesContentRef}
                   style={{ 
-                    textAlign: settings.textAlign,
+                    '--content-align': settings.textAlign,
                     padding: '20px',
                     minHeight: '300px',
                     color: smartNotesColors.text,
@@ -897,19 +1088,23 @@ export default function App() {
 
         {activeTab === "mindmap" && (
           <section className="tab-panel active">
-            {isGenerating ? (
-              <div style={{ textAlign: 'center', padding: '60px' }}>
-                <div className="loading-spinner"></div>
-                <p style={{ marginTop: '24px', fontSize: '20px', fontWeight: 'bold' }}>
-                  {genStatus || '⏳ Generating your mind map...'}
-                </p>
+            {isGenerating && genProgress.mindmap !== 'done' ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="loading-spinner" />
+                <p style={{ marginTop: '12px' }}>Generating mind map...</p>
               </div>
             ) : mindmapContent ? (
-              <div 
-                className="content-display"
-                style={{ padding: '20px', minHeight: '300px', color: '#000000' }}
-                dangerouslySetInnerHTML={{ __html: mindmapContent }} 
-              />
+              <>
+                <div className="speech-controls" style={{ justifyContent: 'flex-end' }}>
+                  <button className="speech-btn" onClick={() => downloadAsPdf(mindmapContentRef.current, 'Mind-Map.pdf')}>📥 Download PDF</button>
+                </div>
+                <div 
+                  className="content-display"
+                  ref={mindmapContentRef}
+                  style={{ padding: '20px', minHeight: '300px', color: '#000000', '--content-align': settings.textAlign }}
+                  dangerouslySetInnerHTML={{ __html: mindmapContent }} 
+                />
+              </>
             ) : (
               <div style={{ textAlign: 'center', padding: '60px' }}>
                 <p style={{ fontSize: '20px', opacity: 0.7 }}>
@@ -922,19 +1117,23 @@ export default function App() {
 
         {activeTab === "quiz" && (
           <section className="tab-panel active">
-            {isGenerating ? (
-              <div style={{ textAlign: 'center', padding: '60px' }}>
-                <div className="loading-spinner"></div>
-                <p style={{ marginTop: '24px', fontSize: '20px', fontWeight: 'bold' }}>
-                  {genStatus || '⏳ Generating your quiz...'}
-                </p>
+            {isGenerating && genProgress.quiz !== 'done' ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="loading-spinner" />
+                <p style={{ marginTop: '12px' }}>Generating quiz...</p>
               </div>
             ) : quizContent ? (
-              <div 
-                className="content-display"
-                style={{ padding: '20px', minHeight: '300px', color: '#000000' }}
-                dangerouslySetInnerHTML={{ __html: quizContent }} 
-              />
+              <>
+                <div className="speech-controls" style={{ justifyContent: 'flex-end' }}>
+                  <button className="speech-btn" onClick={() => downloadAsPdf(quizContentRef.current, 'Quiz.pdf')}>📥 Download PDF</button>
+                </div>
+                <div 
+                  className="content-display"
+                  ref={quizContentRef}
+                  style={{ padding: '20px', minHeight: '300px', color: '#000000', '--content-align': settings.textAlign }}
+                  dangerouslySetInnerHTML={{ __html: quizContent }} 
+                />
+              </>
             ) : (
               <div style={{ textAlign: 'center', padding: '60px' }}>
                 <p style={{ fontSize: '20px', opacity: 0.7 }}>
@@ -947,17 +1146,21 @@ export default function App() {
 
         {activeTab === "flashcard" && (
           <section className="tab-panel active">
-            {isGenerating ? (
-              <div style={{ textAlign: 'center', padding: '60px' }}>
-                <div className="loading-spinner"></div>
-                <p style={{ marginTop: '24px', fontSize: '20px', fontWeight: 'bold' }}>
-                  {genStatus || '⏳ Generating your flashcards...'}
-                </p>
+            {isGenerating && genProgress.flashcard !== 'done' ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <div className="loading-spinner" />
+                <p style={{ marginTop: '12px' }}>Generating flashcards...</p>
               </div>
             ) : flashcardContent ? (
               <div
                 className="flashcard-host content-display"
-                style={{ padding: '20px', minHeight: '300px' }}
+                style={{ 
+                  padding: '20px', 
+                  minHeight: '300px',
+                  '--flashcard-front-bg': flashcardColors.front,
+                  '--flashcard-back-bg': flashcardColors.back,
+                  '--flashcard-text': flashcardColors.text
+                }}
                 onClick={(e) => {
                   const card = e.target.closest(".flashcard");
                   if (card) card.classList.toggle("flipped");
@@ -1013,15 +1216,15 @@ export default function App() {
             </div>
             <div className="form-row">
               <label htmlFor="taSelect">Text Align</label>
-              <p className="form-help">Choose how paragraphs align across the page.</p>
+              <p className="form-help">Choose how text aligns in generated content.</p>
               <select 
                 id="taSelect"
                 value={settings.textAlign} 
                 onChange={(e) => setSettings({ ...settings, textAlign: e.target.value })}
               >
                 <option value="left">Left</option>
-                <option value="justify">Justify</option>
                 <option value="center">Center</option>
+                <option value="right">Right</option>
               </select>
             </div>
             <div className="form-row">
@@ -1073,63 +1276,58 @@ export default function App() {
         <div className="modal-bg" onClick={() => setShowColorPopup(false)}>
           <div className="modal color-settings-modal" onClick={(e) => e.stopPropagation()}>
             <h2>🎨 Color Settings</h2>
-            <p className="form-help">
-              Choose the colors for the Smart Notes content area.
-            </p>
+            <p className="form-help">Choose colors for flashcards.</p>
             <div className="color-picker-row">
               <div className="color-picker-control">
-                <label htmlFor="bgColor">Background</label>
+                <label htmlFor="fcFront">Flashcard Question (Front)</label>
                 <input
-                  id="bgColor"
+                  id="fcFront"
                   type="color"
-                  value={smartNotesColors.background}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      background: e.target.value,
-                    })
-                  }
-                  title="Select the background color for the notes."
+                  value={flashcardColors.front}
+                  onChange={(e) => setFlashcardColors({ ...flashcardColors, front: e.target.value })}
                 />
                 <input
                   type="text"
-                  value={smartNotesColors.background}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      background: e.target.value,
-                    })
-                  }
+                  value={flashcardColors.front}
+                  onChange={(e) => setFlashcardColors({ ...flashcardColors, front: e.target.value })}
                   className="hex-input"
                   maxLength="7"
                 />
+                <p className="form-help">Background color used when showing the question.</p>
               </div>
               <div className="color-picker-control">
-                <label htmlFor="textColor">Text</label>
+                <label htmlFor="fcBack">Flashcard Answer (Back)</label>
                 <input
-                  id="textColor"
+                  id="fcBack"
                   type="color"
-                  value={smartNotesColors.text}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      text: e.target.value,
-                    })
-                  }
-                  title="Select the text color for the notes."
+                  value={flashcardColors.back}
+                  onChange={(e) => setFlashcardColors({ ...flashcardColors, back: e.target.value })}
                 />
                 <input
                   type="text"
-                  value={smartNotesColors.text}
-                  onChange={(e) =>
-                    setSmartNotesColors({
-                      ...smartNotesColors,
-                      text: e.target.value,
-                    })
-                  }
+                  value={flashcardColors.back}
+                  onChange={(e) => setFlashcardColors({ ...flashcardColors, back: e.target.value })}
                   className="hex-input"
                   maxLength="7"
                 />
+                <p className="form-help">Background color used when the card is flipped.</p>
+              </div>
+              <div className="color-picker-control">
+                <label htmlFor="fcText">Flashcard Text</label>
+                <input
+                  id="fcText"
+                  type="color"
+                  value={flashcardColors.text}
+                  onChange={(e) => setFlashcardColors({ ...flashcardColors, text: e.target.value })}
+                />
+                <input
+                  type="text"
+                  value={flashcardColors.text}
+                  onChange={(e) => setFlashcardColors({ ...flashcardColors, text: e.target.value })}
+                  className="hex-input"
+                  maxLength="7"
+                />
+                <p className="form-help">Text color applied to both sides of the flashcard.</p>
               </div>
             </div>
             <div className="actions">
