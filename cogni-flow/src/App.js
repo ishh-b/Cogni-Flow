@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import "./App.css";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -368,6 +368,19 @@ export default function App() {
     }
   };
 
+  const stripIrrelevantLines = (text) => {
+    if (!text) return text;
+    const badPatterns = [
+      /cookie/i, /consent/i, /privacy/i, /terms/i, /policy/i, /subscribe/i,
+      /newsletter/i, /advert/i, /advertisement/i, /sponsored/i, /follow us/i,
+      /sign\s*up/i, /contact\s*us/i, /share\s*this/i, /footer/i, /copyright/i
+    ];
+    return text
+      .split(/\n+/)
+      .filter(line => line.trim().length > 0 && !badPatterns.some(p => p.test(line)))
+      .join('\n');
+  };
+
   const fetchUrlContent = async (url) => {
     console.log("🔍 Attempting to fetch URL:", url);
     
@@ -393,6 +406,7 @@ export default function App() {
     
     // Try multiple proxy services
     const proxies = [
+      { name: "Jina Reader", url: "https://r.jina.ai/http/", type: "jina" },
       { name: "AllOrigins", url: "https://api.allorigins.win/get?url=", type: "allorigins" },
       { name: "CORS Anywhere (Heroku)", url: "https://cors-anywhere.herokuapp.com/", type: "direct" },
       { name: "ThingProxy", url: "https://thingproxy.freeboard.io/fetch/", type: "direct" },
@@ -401,9 +415,9 @@ export default function App() {
     for (const proxy of proxies) {
       try {
         console.log(`🔄 Trying ${proxy.name}...`);
-        const proxyUrl = proxy.type === "allorigins" 
-          ? proxy.url + encodeURIComponent(url) 
-          : proxy.url + url;
+        let proxyUrl = '';
+        if (proxy.type === 'allorigins') proxyUrl = proxy.url + encodeURIComponent(url);
+        else proxyUrl = proxy.url + url;
           
         const response = await fetch(proxyUrl, {
           method: "GET",
@@ -425,8 +439,12 @@ export default function App() {
         } else {
           responseData = await response.text();
         }
-        
+
         if (responseData) {
+          if (proxy.type === 'jina') {
+            const cleaned = stripIrrelevantLines(responseData).trim();
+            if (cleaned.length > 200) return cleaned;
+          }
           const mainHtml = extractMainContentHtmlFromPage(responseData);
           const extractedContent = extractTextFromContent(mainHtml);
           console.log(`✅ ${proxy.name} successful! Extracted ${extractedContent?.length} characters`);
@@ -635,7 +653,7 @@ export default function App() {
       const prompts = {
         notes: `Create comprehensive study notes in HTML format. STRICT RULES: 1) Return ONLY HTML (no markdown, no explanations); 2) Use semantic structure with <h2> section headings and <h3> subheadings, followed by <p> paragraphs and <ul><li> bullets; 3) Include at least 5-10 bullet points across sections; 4) Do not repeat the prompt text verbatim—summarize and elaborate; 5) Highlight 5–10 critical terms or definitions using <mark> (do not overuse); 6) Use <strong> to emphasize important phrases inside bullets; 7) No external links or policy text; 8) Avoid empty sections. Content:\n\n${truncatedText}`,
 
-        mindmap: `Create a clean, compact, COLORED HTML mind map. STRICT RULES:\n\n1) Return ONLY HTML (no scripts).\n2) Structure: <div class=\"mm-root\"><h2>Root Topic</h2><div class=\"mm-branches\"> ... nested <div class=\"mm-node\"><h3>Branch</h3><ul><li>subpoint</li>...</ul></div> ... </div></div>.\n3) Max 4 top-level branches; each branch ≤ 5 child bullets; keep each label ≤ 10 words.\n4) Include a small <style> block at the very top that defines a pleasant color palette and applies it to branches. Use these CSS rules (use exactly these class names):\n<style>\n.mm-root{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:960px;margin:0 auto;padding:12px}\n.mm-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}\n.mm-node{background:#fff;border:1px solid #ddd;border-left-width:6px;border-radius:10px;padding:10px 12px}\n.mm-node h3{margin:0 0 6px 0;font-size:16px}\n.mm-node ul{margin:0;padding-left:18px}\n/* color tokens applied to top-level nodes */\n.mm-c1{--mm-bg:#FFE9E3;--mm-border:#FF6B6B}.mm-c2{--mm-bg:#E6F7FF;--mm-border:#1E90FF}.mm-c3{--mm-bg:#EAFBE7;--mm-border:#2DB84C}.mm-c4{--mm-bg:#FFF6CC;--mm-border:#FFC107}\n/* apply vars */\n.mm-node.mm-c1,.mm-node.mm-c2,.mm-node.mm-c3,.mm-node.mm-c4{background:var(--mm-bg);border-left-color:var(--mm-border)}\n/* children inherit colored border only for subtlety */\n.mm-node .mm-node{background:#fff;border-left-color:var(--mm-border)}\n</style>\n5) Assign classes cyclically to the TOP-LEVEL branch nodes only: mm-c1, mm-c2, mm-c3, mm-c4 in order.\n6) Avoid repeating the same idea across branches; focus on key concepts and relationships.\n\nContent:\n\n${truncatedText}`,
+        mindmap: `Create a clean, compact, COLORED HTML mind map. STRICT RULES:\n\n1) Return ONLY HTML (no scripts).\n2) Structure: <div class=\"mm-root\"><h2>Root Topic</h2><div class=\"mm-branches\"> ... nested <div class=\"mm-node\"><h3>Branch</h3><ul><li>subpoint</li>...</ul></div> ... </div></div>.\n3) Max 4 top-level branches; each branch ≤ 5 child bullets; keep each label ≤ 10 words.\n4) Include a small <style> block at the very top that defines a pleasant color palette and applies it to branches. Use these CSS rules (use exactly these class names):\n<style>\n.mm-root{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:960px;margin:0 auto;padding:12px}\n.mm-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}\n.mm-node{background:#fff;border:1px solid #ddd;border-left-width:6px;border-radius:10px;padding:10px 12px;box-shadow:0 2px 6px rgba(0,0,0,.04)}\n.mm-node h3{margin:0 0 6px 0;font-size:16px}\n.mm-node ul{margin:0;padding-left:18px}\n.mm-badge{display:inline-block;font-size:12px;padding:2px 6px;border-radius:9999px;background:#eef2f7;margin-left:6px}\n/* color tokens applied to top-level nodes */\n.mm-c1{--mm-bg:#FFE9E3;--mm-border:#FF6B6B}.mm-c2{--mm-bg:#E6F7FF;--mm-border:#1E90FF}.mm-c3{--mm-bg:#EAFBE7;--mm-border:#2DB84C}.mm-c4{--mm-bg:#FFF6CC;--mm-border:#FFC107}\n/* apply vars */\n.mm-node.mm-c1,.mm-node.mm-c2,.mm-node.mm-c3,.mm-node.mm-c4{background:var(--mm-bg);border-left-color:var(--mm-border)}\n/* children inherit colored border only for subtlety */\n.mm-node .mm-node{background:#fff;border-left-color:var(--mm-border)}\n</style>\n5) Assign classes cyclically to the TOP-LEVEL branch nodes only: mm-c1, mm-c2, mm-c3, mm-c4 in order.\n6) Under each branch title, add a tiny <span class=\"mm-badge\">3-5 key points</span> badge.\n7) Avoid repeating the same idea across branches; focus on key concepts and relationships.\n\nContent:\n\n${truncatedText}`,
 
         quiz: `Generate 10 multiple-choice questions in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO event handlers (like onclick); 3) For each question, use <div class="q"> with the question text in <strong>, followed by a <ul> of four <li> options labeled A) B) C) D); 4) Immediately after the options, include <p class="answer"><strong>Answer:</strong> X)</p> where X is the correct option letter. Use only semantic HTML. No comments, no explanations after the HTML. Content:\n\n${truncatedText}`,
         
