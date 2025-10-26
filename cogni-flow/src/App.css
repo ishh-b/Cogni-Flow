@@ -2917,14 +2917,6 @@ button:disabled {
   color: var(--flashcard-text, #000000) !important;
 }
 
-/* Runtime alignment control for generated content */
-.content-display {
-  text-align: var(--content-align, left) !important;
-}
-.content-display * {
-  text-align: inherit !important;
-}
-
 .modal-bg {
   position: fixed;
   top: 0;
