@@ -71,7 +71,6 @@ export default function App() {
     text: "#2C3E50",
   });
   const fileInputRef = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("cogniSet");
@@ -302,9 +301,12 @@ export default function App() {
     throw new Error("Unable to fetch content from URL. This may be due to website restrictions. Please copy and paste the article text directly into the text box instead.");
   };
 
-  const processFile = async (file) => {
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
     if (!file) return;
+
     setFileInput(file);
+
     if (file.type === "application/pdf") {
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -338,38 +340,6 @@ export default function App() {
       };
       reader.readAsText(file);
     }
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    await processFile(file);
-  };
-
-  const handleDrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-    await processFile(files[0]);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
   };
 
   const handleClearFile = () => {
@@ -833,24 +803,6 @@ export default function App() {
                   onChange={handleFileChange}
                   accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx"
                 />
-                <div
-                  className={"drop-zone" + (isDragging ? " dragover" : "")}
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                  onDragEnter={handleDragEnter}
-                  onDragLeave={handleDragLeave}
-                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (fileInputRef.current) fileInputRef.current.click();
-                    }
-                  }}
-                >
-                  or drag & drop
-                </div>
                 {fileInput && (
                   <div className="file-info">
                     <span>{fileInput.name}</span>
