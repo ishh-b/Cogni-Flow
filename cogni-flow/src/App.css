@@ -2898,13 +2898,13 @@ button:disabled {
 }
 
 .card-front {
-  color: var(--flashcard-text, #000000) !important;
+  color: #000000 !important; /* always black */
   font-weight: var(--font-weight-bold);
   background: var(--flashcard-front-bg, var(--theme-primary-accent));
 }
 
 .card-back {
-  color: var(--flashcard-text, #000000) !important;
+  color: #000000 !important; /* always black */
   transform: rotateY(180deg);
   background: var(--flashcard-back-bg, var(--theme-secondary-accent));
   font-weight: var(--font-weight-medium);
