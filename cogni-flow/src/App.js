@@ -8,6 +8,21 @@ import { getAnalytics } from "firebase/analytics";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
+// Supported output languages (UI remains English; content is generated in target language)
+const LANG_OPTIONS = [
+  { code: 'en', label: 'English', tts: 'en-US' },
+  { code: 'hi', label: 'Hindi', tts: 'hi-IN' },
+  { code: 'es', label: 'Spanish', tts: 'es-ES' },
+  { code: 'fr', label: 'French', tts: 'fr-FR' },
+  { code: 'de', label: 'German', tts: 'de-DE' },
+  { code: 'pt', label: 'Portuguese', tts: 'pt-PT' },
+  { code: 'it', label: 'Italian', tts: 'it-IT' },
+  { code: 'ja', label: 'Japanese', tts: 'ja-JP' },
+  { code: 'ko', label: 'Korean', tts: 'ko-KR' },
+  { code: 'zh', label: 'Chinese (Simplified)', tts: 'zh-CN' },
+  { code: 'ar', label: 'Arabic', tts: 'ar-SA' },
+];
+
 const firebaseConfig = {
   apiKey: "AIzaSyDyy8AM0mc9oLi8ixywP4qo2dpJp2TYG6o",
   authDomain: "cogni-flow-d41db.firebaseapp.com",
@@ -47,6 +62,7 @@ const API_ENDPOINTS = API_VERSIONS.flatMap(v =>
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("input");
+  const [outputLang, setOutputLang] = useState('en');
   const [theme, setTheme] = useState("scheme1");
   const [textInput, setTextInput] = useState("");
   const [urlInput, setUrlInput] = useState("");
@@ -650,14 +666,15 @@ export default function App() {
       const truncatedText = sourceText.substring(0, 30000);
       console.log("📄 Processing text, length:", truncatedText.length);
       
+      const langNote = outputLang === 'en' ? '' : `Write all output in ${outputLang}. Use natural, correct ${outputLang} vocabulary and grammar.`;
       const prompts = {
-        notes: `Create comprehensive study notes in HTML format. STRICT RULES: 1) Return ONLY HTML (no markdown, no explanations); 2) Use semantic structure with <h2> section headings and <h3> subheadings, followed by <p> paragraphs and <ul><li> bullets; 3) Include at least 5-10 bullet points across sections; 4) Do not repeat the prompt text verbatim—summarize and elaborate; 5) Highlight 5–10 critical terms or definitions using <mark> (do not overuse); 6) Use <strong> to emphasize important phrases inside bullets; 7) No external links or policy text; 8) Avoid empty sections. Content:\n\n${truncatedText}`,
+        notes: `${langNote}\nCreate comprehensive study notes in HTML format. STRICT RULES: 1) Return ONLY HTML (no markdown, no explanations); 2) Use semantic structure with <h2> section headings and <h3> subheadings, followed by <p> paragraphs and <ul><li> bullets; 3) Include at least 5-10 bullet points across sections; 4) Do not repeat the prompt text verbatim—summarize and elaborate; 5) Highlight 5–10 critical terms or definitions using <mark> (do not overuse); 6) Use <strong> to emphasize important phrases inside bullets; 7) No external links or policy text; 8) Avoid empty sections. Content:\n\n${truncatedText}`,
 
-        mindmap: `Create a clean, compact, COLORED HTML mind map. STRICT RULES:\n\n1) Return ONLY HTML (no scripts).\n2) Structure: <div class=\"mm-root\"><h2>Root Topic</h2><div class=\"mm-branches\"> ... nested <div class=\"mm-node\"><h3>Branch <span class=\"mm-badge\"></span></h3><ul><li>subpoint</li>...</ul><!-- optional second level --><div class=\"mm-node\"><h4>Sub-branch</h4><ul><li>detail</li></ul></div></div> ... </div></div>.\n3) Use 4–6 top-level branches; each branch provides 4–6 concise bullets (≤ 11 words). Labels must be short and scannable.\n4) Include a small <style> block at the very top that defines a cohesive, pastel color palette and applies it to branches. Use these CSS rules (use exactly these class names):\n<style>\n.mm-root{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:1040px;margin:0 auto;padding:12px}\n.mm-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}\n.mm-node{background:#fff;border:1px solid #e6e8eb;border-left-width:6px;border-radius:12px;padding:12px 14px;box-shadow:0 2px 8px rgba(0,0,0,.05)}\n.mm-node h3{margin:0 0 8px 0;font-size:16px;line-height:1.3}\n.mm-node h4{margin:10px 0 6px 0;font-size:14px;color:#444}\n.mm-node ul{margin:0;padding-left:18px}\n.mm-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:9999px;background:#eef2f7;margin-left:8px;color:#334155}\n/* cohesive pastel palette for top-level nodes */\n.mm-c1{--mm-bg:#FFF1F2;--mm-border:#FB7185}.mm-c2{--mm-bg:#ECFEFF;--mm-border:#22D3EE}.mm-c3{--mm-bg:#F0FDF4;--mm-border:#34D399}.mm-c4{--mm-bg:#FEFCE8;--mm-border:#FACC15}.mm-c5{--mm-bg:#EEF2FF;--mm-border:#6366F1}.mm-c6{--mm-bg:#FAE8FF;--mm-border:#C084FC}.mm-c7{--mm-bg:#FFF7ED;--mm-border:#FB923C}.mm-c8{--mm-bg:#E0F2FE;--mm-border:#38BDF8}\n/* apply vars */\n.mm-node.mm-c1,.mm-node.mm-c2,.mm-node.mm-c3,.mm-node.mm-c4,.mm-node.mm-c5,.mm-node.mm-c6,.mm-node.mm-c7,.mm-node.mm-c8{background:var(--mm-bg);border-left-color:var(--mm-border)}\n/* children inherit colored border only for subtlety */\n.mm-node .mm-node{background:#fff;border-left-color:var(--mm-border)}\n</style>\n5) Assign classes cyclically to the TOP-LEVEL branch nodes only: mm-c1..mm-c8 in order.\n6) Under each branch title, set the badge text to \"4–6 key points\".\n7) Avoid repeating the same idea across branches; focus on key concepts and relationships. Prefer verbs and concrete nouns.\n\nContent:\n\n${truncatedText}`,
+        mindmap: `${langNote}\nCreate a clean, compact, COLORED HTML mind map. STRICT RULES:\n\n1) Return ONLY HTML (no scripts).\n2) Structure: <div class=\"mm-root\"><h2>Root Topic</h2><div class=\"mm-branches\"> ... nested <div class=\"mm-node\"><h3>Branch <span class=\"mm-badge\"></span></h3><ul><li>subpoint</li>...</ul><!-- optional second level --><div class=\"mm-node\"><h4>Sub-branch</h4><ul><li>detail</li></ul></div></div> ... </div></div>.\n3) Use 4–6 top-level branches; each branch provides 4–6 concise bullets (≤ 11 words). Labels must be short and scannable.\n4) Include a small <style> block at the very top that defines a cohesive, pastel color palette and applies it to branches. Use these CSS rules (use exactly these class names):\n<style>\n.mm-root{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:1040px;margin:0 auto;padding:12px}\n.mm-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}\n.mm-node{background:#fff;border:1px solid #e6e8eb;border-left-width:6px;border-radius:12px;padding:12px 14px;box-shadow:0 2px 8px rgba(0,0,0,.05)}\n.mm-node h3{margin:0 0 8px 0;font-size:16px;line-height:1.3}\n.mm-node h4{margin:10px 0 6px 0;font-size:14px;color:#444}\n.mm-node ul{margin:0;padding-left:18px}\n.mm-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:9999px;background:#eef2f7;margin-left:8px;color:#334155}\n/* cohesive pastel palette for top-level nodes */\n.mm-c1{--mm-bg:#FFF1F2;--mm-border:#FB7185}.mm-c2{--mm-bg:#ECFEFF;--mm-border:#22D3EE}.mm-c3{--mm-bg:#F0FDF4;--mm-border:#34D399}.mm-c4{--mm-bg:#FEFCE8;--mm-border:#FACC15}.mm-c5{--mm-bg:#EEF2FF;--mm-border:#6366F1}.mm-c6{--mm-bg:#FAE8FF;--mm-border:#C084FC}.mm-c7{--mm-bg:#FFF7ED;--mm-border:#FB923C}.mm-c8{--mm-bg:#E0F2FE;--mm-border:#38BDF8}\n/* apply vars */\n.mm-node.mm-c1,.mm-node.mm-c2,.mm-node.mm-c3,.mm-node.mm-c4,.mm-node.mm-c5,.mm-node.mm-c6,.mm-node.mm-c7,.mm-node.mm-c8{background:var(--mm-bg);border-left-color:var(--mm-border)}\n/* children inherit colored border only for subtlety */\n.mm-node .mm-node{background:#fff;border-left-color:var(--mm-border)}\n</style>\n5) Assign classes cyclically to the TOP-LEVEL branch nodes only: mm-c1..mm-c8 in order.\n6) Under each branch title, set the badge text to \"4–6 key points\".\n7) Avoid repeating the same idea across branches; focus on key concepts and relationships. Prefer verbs and concrete nouns.\n\nContent:\n\n${truncatedText}`,
 
-        quiz: `Generate 10 multiple-choice questions in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO event handlers (like onclick); 3) For each question, use <div class="q"> with the question text in <strong>, followed by a <ul> of four <li> options labeled A) B) C) D); 4) Immediately after the options, include <p class="answer"><strong>Answer:</strong> X)</p> where X is the correct option letter. Use only semantic HTML. No comments, no explanations after the HTML. Content:\n\n${truncatedText}`,
+        quiz: `${langNote}\nGenerate 10 multiple-choice questions in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO event handlers (like onclick); 3) For each question, use <div class="q"> with the question text in <strong>, followed by a <ul> of four <li> options labeled A) B) C) D); 4) Immediately after the options, include <p class="answer"><strong>Answer:</strong> X)</p> where X is the correct option letter. Use only semantic HTML. No comments, no explanations after the HTML. Content:\n\n${truncatedText}`,
         
-        flashcard: `Create 10 flashcards in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO inline event handlers; 3) Structure each card as <div class="flashcard"><div class="card-front">Q...</div><div class="card-back">A...</div></div>; 4) Do NOT include any CSS transforms or rotation; 5) Keep content concise. Content:\n\n${truncatedText}`
+        flashcard: `${langNote}\nCreate 10 flashcards in PURE STATIC HTML (no scripts). STRICT RULES: 1) Return ONLY HTML; 2) NO <script>, NO <style>, NO inline event handlers; 3) Structure each card as <div class="flashcard"><div class="card-front">Q...</div><div class="card-back">A...</div></div>; 4) Do NOT include any CSS transforms or rotation; 5) Keep content concise. Content:\n\n${truncatedText}`
       };
 
       const types = Object.entries(prompts);
@@ -795,6 +812,16 @@ export default function App() {
     console.log(`🔊 Speaking sentence ${index + 1}/${sentences.length}: "${sentenceText.substring(0, 50)}..."`);
     
     const utterance = new SpeechSynthesisUtterance(sentenceText);
+    // Pick a voice matching the selected output language when available
+    try {
+      const langCfg = LANG_OPTIONS.find(l => l.code === outputLang);
+      if (langCfg) {
+        const voices = window.speechSynthesis.getVoices?.() || [];
+        const preferred = voices.find(v => v.lang?.toLowerCase().startsWith(langCfg.tts.toLowerCase().slice(0,2))) || voices.find(v => v.lang === langCfg.tts);
+        if (preferred) utterance.voice = preferred;
+        if (langCfg.tts) utterance.lang = langCfg.tts;
+      }
+    } catch {}
     utterance.rate = speechSpeed;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -960,6 +987,20 @@ export default function App() {
           <button className={activeTab === "mindmap" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("mindmap")}>🧠 Mind Map</button>
           <button className={activeTab === "quiz" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("quiz")}>❓ Quiz</button>
           <button className={activeTab === "flashcard" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("flashcard")}>🎴 Flashcards</button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label htmlFor="langSelect" style={{ fontSize: '12px', opacity: 0.8 }}>Language:</label>
+            <select
+              id="langSelect"
+              value={outputLang}
+              onChange={(e) => setOutputLang(e.target.value)}
+              className="tab-btn"
+              style={{ padding: '6px 8px' }}
+            >
+              {LANG_OPTIONS.map(l => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
+          </div>
         </nav>
 
         {activeTab === "input" && (
