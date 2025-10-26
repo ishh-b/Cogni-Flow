@@ -977,7 +977,7 @@ export default function App() {
             ) : mindmapContent ? (
               <div 
                 className="content-display"
-                style={{ padding: '20px', minHeight: '300px', color: '#000000', textAlign: settings.textAlign }}
+                style={{ padding: '20px', minHeight: '300px', color: '#000000' }}
                 dangerouslySetInnerHTML={{ __html: mindmapContent }} 
               />
             ) : (
@@ -1002,7 +1002,7 @@ export default function App() {
             ) : quizContent ? (
               <div 
                 className="content-display"
-                style={{ padding: '20px', minHeight: '300px', color: '#000000', textAlign: settings.textAlign }} 
+                style={{ padding: '20px', minHeight: '300px', color: '#000000' }}
                 dangerouslySetInnerHTML={{ __html: quizContent }} 
               />
             ) : (
@@ -1090,15 +1090,15 @@ export default function App() {
             </div>
             <div className="form-row">
               <label htmlFor="taSelect">Text Align</label>
-              <p className="form-help">Choose how text aligns in generated content.</p>
+              <p className="form-help">Choose how paragraphs align across the page.</p>
               <select 
                 id="taSelect"
-                value={settings.textAlign}
+                value={settings.textAlign} 
                 onChange={(e) => setSettings({ ...settings, textAlign: e.target.value })}
               >
                 <option value="left">Left</option>
+                <option value="justify">Justify</option>
                 <option value="center">Center</option>
-                <option value="right">Right</option>
               </select>
             </div>
             <div className="form-row">
