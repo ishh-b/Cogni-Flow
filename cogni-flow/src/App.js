@@ -68,12 +68,16 @@ async function resolveApiEndpoints() {
         const models = data?.models || data?.data || [];
         for (const m of models) {
           const name = m?.name || m?.id || ""; // e.g., models/gemini-1.5-flash
-          const hasGen = (m?.supportedGenerationMethods || m?.generationMethods || []).join(",").toLowerCase().includes("generatecontent");
-          if (!name || (m?.state && m.state.toLowerCase().includes("deprecated"))) continue;
-          if (hasGen || !m?.supportedGenerationMethods) {
-            const modelId = name.replace(/^models\//, "");
-            discovered.push({ v, modelId });
-          }
+          if (!name) continue;
+          const modelId = name.replace(/^models\//, "");
+          const lower = modelId.toLowerCase();
+          const hasGen = (m?.supportedGenerationMethods || m?.generationMethods || [])
+            .map(x => String(x).toLowerCase()).includes("generatecontent");
+          const deprecated = (m?.state || '').toLowerCase().includes('deprecated');
+          // Only include generation-capable, non-deprecated, non-pro models
+          if (!hasGen || deprecated) continue;
+          if (lower.includes('pro')) continue;
+          discovered.push({ v, modelId });
         }
       } catch {}
     }
