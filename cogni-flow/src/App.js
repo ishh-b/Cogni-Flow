@@ -977,9 +977,19 @@ export default function App() {
   };
 
   const handleTabChange = (tab) => {
+    // Allow switching if not generating, or if the target tab's content is done
     if (isGenerating) {
-      alert("⏳ Please wait! Content is still generating. Don't switch tabs yet!");
-      return;
+      const doneByTab = {
+        notes: genProgress.notes === 'done',
+        mindmap: genProgress.mindmap === 'done',
+        quiz: genProgress.quiz === 'done',
+        flashcard: genProgress.flashcard === 'done',
+        input: true,
+      };
+      if (!doneByTab[tab]) {
+        alert("⏳ Still generating. You can open any tab that shows ✅ in the header.");
+        return;
+      }
     }
     window.speechSynthesis.cancel();
     resetSpeechControls();
