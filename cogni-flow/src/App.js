@@ -23,6 +23,7 @@ const LANG_OPTIONS = [
   { code: 'ar', label: 'Arabic', tts: 'ar-SA' },
   { code: 'bn', label: 'Bengali', tts: 'bn-IN' },
   { code: 'te', label: 'Telugu', tts: 'te-IN' },
+  { code: 'ml', label: 'Malayalam', tts: 'ml-IN' },
 ];
 
 const firebaseConfig = {
@@ -759,7 +760,11 @@ export default function App() {
       const truncatedText = sourceText.substring(0, 30000);
       console.log("📄 Processing text, length:", truncatedText.length);
       
-      const langNote = outputLang === 'en' ? '' : `Write all output in ${outputLang}. Use natural, correct ${outputLang} vocabulary and grammar.`;
+      const langCfgSel = LANG_OPTIONS.find(l => l.code === outputLang);
+      const langName = langCfgSel?.label || 'English';
+      const langNote = outputLang === 'en'
+        ? ''
+        : `Respond ONLY in ${langName} (${outputLang}). Translate and adapt the content; write all headings, paragraphs, bullets and labels in ${langName}. Do not include English text unless it is part of a proper noun or code snippet.`;
       const quickHint = `If asked for quick draft, produce a concise outline first, then extend.`;
       const prompts = {
         notes: `${langNote}\nCreate comprehensive study notes in HTML format. STRICT RULES: 1) Return ONLY HTML (no markdown, no explanations); 2) Use semantic structure with <h2> section headings and <h3> subheadings, followed by <p> paragraphs and <ul><li> bullets; 3) Include at least 5-10 bullet points across sections; 4) Do not repeat the prompt text verbatim—summarize and elaborate; 5) Highlight 5–10 critical terms or definitions using <mark> (do not overuse); 6) Use <strong> to emphasize important phrases inside bullets; 7) No external links or policy text; 8) Avoid empty sections. Content:\n\n${truncatedText}`,
