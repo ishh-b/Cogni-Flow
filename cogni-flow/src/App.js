@@ -132,6 +132,7 @@ export default function App() {
     lineHeight: 1.5,
     letterSpacing: 0,
     bionic: false,
+    fastMode: false,
   });
   const [showColorPopup, setShowColorPopup] = useState(false);
   const [flashcardColors, setFlashcardColors] = useState({ front: "", back: "", text: "#000000" });
@@ -734,7 +735,11 @@ export default function App() {
           const endpoint = endpoints[i];
           try {
             // 1) Quick outline for immediate UI feedback
-            const quickResp = await callGeminiAPI(endpoint, `${prompt}\n\nFIRST produce a very short outline only with section titles, using <div> and <h2>/<ul><li>> minimal structure.`, { maxOutputTokens: 256 });
+            const quickResp = await callGeminiAPI(
+              endpoint,
+              `${prompt}\n\nFIRST produce a very short outline only with section titles, using <div> and <h2>/<ul><li>> minimal structure.`,
+              { maxOutputTokens: settings.fastMode ? 192 : 256 }
+            );
             if (quickResp && quickResp.length > 50) {
               const quickClean = cleanHtmlResponse(quickResp);
               if (type === 'notes') setNotesContent(sanitizeHtmlForDisplay(quickClean));
@@ -744,7 +749,11 @@ export default function App() {
             }
 
             // 2) Full version replaces the outline when ready
-            const response = await callGeminiAPI(endpoint, prompt, { maxOutputTokens: 4096 });
+            const response = await callGeminiAPI(
+              endpoint,
+              prompt,
+              { maxOutputTokens: settings.fastMode ? 2048 : 4096 }
+            );
             if (!response || response.length < 100) continue;
             const cleanedResponse = cleanHtmlResponse(response);
             if (!cleanedResponse || cleanedResponse.length < 50) throw new Error('Too short');
@@ -1428,6 +1437,17 @@ export default function App() {
                 value={settings.letterSpacing}
                 onChange={(e) => setSettings({ ...settings, letterSpacing: parseFloat(e.target.value) })}
               />
+            </div>
+            <div className="form-row">
+              <label className="checkbox-inline">
+                <input
+                  type="checkbox"
+                  checked={settings.fastMode}
+                  onChange={(e) => setSettings({ ...settings, fastMode: e.target.checked })}
+                />
+                Fast mode (quicker drafts, fewer tokens)
+              </label>
+              <p className="form-help">Enable when you want faster results. Quality is preserved by a later refinement pass.</p>
             </div>
             <div className="form-row">
               <p className="form-help">Emphasize the beginning of words to aid scanning.</p>
