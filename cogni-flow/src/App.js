@@ -21,6 +21,8 @@ const LANG_OPTIONS = [
   { code: 'ko', label: 'Korean', tts: 'ko-KR' },
   { code: 'zh', label: 'Chinese (Simplified)', tts: 'zh-CN' },
   { code: 'ar', label: 'Arabic', tts: 'ar-SA' },
+  { code: 'bn', label: 'Bengali', tts: 'bn-IN' },
+  { code: 'te', label: 'Telugu', tts: 'te-IN' },
 ];
 
 const firebaseConfig = {
@@ -373,6 +375,49 @@ export default function App() {
     console.log("--- END FULL EXTRACTED TEXT ---");
     
     return text;
+  };
+
+  // Apply "bionic reading" emphasis to the beginning of words in HTML
+  const applyBionicToHtml = (html) => {
+    if (!html || typeof html !== 'string') return html;
+    try {
+      const container = document.createElement('div');
+      container.innerHTML = html;
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+      const toWrap = [];
+      while (true) {
+        const node = walker.nextNode();
+        if (!node) break;
+        const parentTag = node.parentElement?.tagName?.toUpperCase();
+        if (!parentTag || parentTag === 'SCRIPT' || parentTag === 'STYLE') continue;
+        const text = node.nodeValue;
+        if (!text || !/\w{4,}/.test(text)) continue;
+        toWrap.push(node);
+      }
+
+      toWrap.forEach((textNode) => {
+        const txt = textNode.nodeValue || '';
+        const replaced = txt.replace(/\b([A-Za-zÀ-ÖØ-öø-ÿ]{4,})\b/g, (m) => {
+          const split = Math.ceil(m.length * 0.45);
+          const head = m.slice(0, split);
+          const tail = m.slice(split);
+          return `<strong class="bionic">${head}</strong>${tail}`;
+        });
+        if (replaced !== txt) {
+          const span = document.createElement('span');
+          span.innerHTML = replaced;
+          textNode.parentNode?.replaceChild(span, textNode);
+          // unwrap span to avoid extra wrappers
+          while (span.firstChild) {
+            span.parentNode?.insertBefore(span.firstChild, span);
+          }
+          span.parentNode?.removeChild(span);
+        }
+      });
+      return container.innerHTML;
+    } catch {
+      return html;
+    }
   };
 
   // Heuristic extraction of the main article content from a full web page HTML
@@ -742,7 +787,11 @@ export default function App() {
             );
             if (quickResp && quickResp.length > 50) {
               const quickClean = cleanHtmlResponse(quickResp);
-              if (type === 'notes') setNotesContent(sanitizeHtmlForDisplay(quickClean));
+              if (type === 'notes') {
+                const sanitized = sanitizeHtmlForDisplay(quickClean);
+                const maybeBionic = settings.bionic ? applyBionicToHtml(sanitized) : sanitized;
+                setNotesContent(maybeBionic);
+              }
               else if (type === 'mindmap') setMindmapContent(quickClean);
               else if (type === 'quiz') setQuizContent(sanitizeHtmlForDisplay(quickClean));
               else if (type === 'flashcard') setFlashcardContent(sanitizeHtmlForDisplay(quickClean));
@@ -758,7 +807,12 @@ export default function App() {
             const cleanedResponse = cleanHtmlResponse(response);
             if (!cleanedResponse || cleanedResponse.length < 50) throw new Error('Too short');
             switch (type) {
-              case 'notes': setNotesContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
+              case 'notes': {
+                const sanitized = sanitizeHtmlForDisplay(cleanedResponse);
+                const maybeBionic = settings.bionic ? applyBionicToHtml(sanitized) : sanitized;
+                setNotesContent(maybeBionic);
+                break;
+              }
               case 'mindmap': setMindmapContent(cleanedResponse); break;
               case 'quiz': setQuizContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
               case 'flashcard': setFlashcardContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
