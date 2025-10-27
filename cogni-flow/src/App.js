@@ -47,18 +47,59 @@ try {
 const apiKey = "AIzaSyAaiJHfFeKRrF8Wy5rqUCwhN2l3-EEi-2Q"; 
 
 // Build a robust list of candidate endpoints across API versions and model aliases
-const API_MODEL_CANDIDATES = [
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-exp",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-  "gemini-1.5-pro-latest",
-  "gemini-1.5-pro",
+// Dynamic endpoint resolution — probes ListModels and builds a working list for this key
+const API_PREFERRED_MODELS = [
+  "gemini-2.0-flash", "gemini-2.0-flash-exp",
+  "gemini-1.5-flash", "gemini-1.5-flash-8b"
 ];
 const API_VERSIONS = ["v1beta", "v1"]; // some keys only enable models on v1
-const API_ENDPOINTS = API_VERSIONS.flatMap(v =>
-  API_MODEL_CANDIDATES.map(m => `https://generativelanguage.googleapis.com/${v}/models/${m}:generateContent?key=${apiKey}`)
-);
+const apiEndpointsRef = { current: [] };
+
+async function resolveApiEndpoints() {
+  if (apiEndpointsRef.current.length) return apiEndpointsRef.current;
+  const discovered = [];
+  try {
+    for (const v of API_VERSIONS) {
+      const url = `https://generativelanguage.googleapis.com/${v}/models?key=${apiKey}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const models = data?.models || data?.data || [];
+        for (const m of models) {
+          const name = m?.name || m?.id || ""; // e.g., models/gemini-1.5-flash
+          const hasGen = (m?.supportedGenerationMethods || m?.generationMethods || []).join(",").toLowerCase().includes("generatecontent");
+          if (!name || (m?.state && m.state.toLowerCase().includes("deprecated"))) continue;
+          if (hasGen || !m?.supportedGenerationMethods) {
+            const modelId = name.replace(/^models\//, "");
+            discovered.push({ v, modelId });
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+
+  // Order by our preference list first, then others
+  const ordered = [];
+  const pushIf = (modelId, v) => {
+    const endpoint = `https://generativelanguage.googleapis.com/${v}/models/${modelId}:generateContent?key=${apiKey}`;
+    if (!ordered.includes(endpoint)) ordered.push(endpoint);
+  };
+  for (const pref of API_PREFERRED_MODELS) {
+    const hits = discovered.filter(d => d.modelId.startsWith(pref));
+    hits.forEach(h => pushIf(h.modelId, h.v));
+  }
+  // Fallbacks: any remaining discovered
+  discovered.forEach(h => pushIf(h.modelId, h.v));
+  // Ultimate fallback if probe failed
+  if (!ordered.length) {
+    for (const v of API_VERSIONS) {
+      for (const m of API_PREFERRED_MODELS) pushIf(m, v);
+    }
+  }
+  apiEndpointsRef.current = ordered;
+  return ordered;
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("input");
@@ -103,6 +144,8 @@ export default function App() {
     background: "#ffffff",
     text: "#2C3E50",
   });
+
+  const statusIcon = (s) => (s === 'done' ? '✅' : s === 'running' ? '⏳' : s === 'error' ? '⚠️' : '');
   const fileInputRef = useRef(null);
   const notesContentRef = useRef(null);
   const mindmapContentRef = useRef(null);
@@ -570,7 +613,7 @@ export default function App() {
     }
   };
 
-  const callGeminiAPI = async (endpoint, prompt) => {
+  const callGeminiAPI = async (endpoint, prompt, overrides = {}) => {
     if (process.env.NODE_ENV !== 'production') {
       console.log("🔄 Calling Gemini API...");
       console.log("📍 Endpoint:", endpoint.split('?')[0]); // Log without API key
@@ -583,11 +626,11 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { 
-          temperature: 0.25, 
-          maxOutputTokens: 4096,
-          topP: 0.95,
-          topK: 40
+        generationConfig: {
+          temperature: overrides.temperature ?? 0.25,
+          maxOutputTokens: overrides.maxOutputTokens ?? 4096,
+          topP: overrides.topP ?? 0.95,
+          topK: overrides.topK ?? 40,
         },
       }),
       signal: abortController.signal,
@@ -667,6 +710,7 @@ export default function App() {
       console.log("📄 Processing text, length:", truncatedText.length);
       
       const langNote = outputLang === 'en' ? '' : `Write all output in ${outputLang}. Use natural, correct ${outputLang} vocabulary and grammar.`;
+      const quickHint = `If asked for quick draft, produce a concise outline first, then extend.`;
       const prompts = {
         notes: `${langNote}\nCreate comprehensive study notes in HTML format. STRICT RULES: 1) Return ONLY HTML (no markdown, no explanations); 2) Use semantic structure with <h2> section headings and <h3> subheadings, followed by <p> paragraphs and <ul><li> bullets; 3) Include at least 5-10 bullet points across sections; 4) Do not repeat the prompt text verbatim—summarize and elaborate; 5) Highlight 5–10 critical terms or definitions using <mark> (do not overuse); 6) Use <strong> to emphasize important phrases inside bullets; 7) No external links or policy text; 8) Avoid empty sections. Content:\n\n${truncatedText}`,
 
@@ -681,19 +725,27 @@ export default function App() {
       const generateOne = async ([type, prompt]) => {
         setGenProgress((p) => ({ ...p, [type]: 'running' }));
         let lastError = null;
-        for (let i = 0; i < API_ENDPOINTS.length; i++) {
-          const endpoint = API_ENDPOINTS[i];
+        const endpoints = await resolveApiEndpoints();
+        for (let i = 0; i < endpoints.length; i++) {
+          const endpoint = endpoints[i];
           try {
-            const response = await callGeminiAPI(endpoint, prompt);
+            // 1) Quick outline for immediate UI feedback
+            const quickResp = await callGeminiAPI(endpoint, `${prompt}\n\nFIRST produce a very short outline only with section titles, using <div> and <h2>/<ul><li>> minimal structure.`, { maxOutputTokens: 256 });
+            if (quickResp && quickResp.length > 50) {
+              const quickClean = cleanHtmlResponse(quickResp);
+              if (type === 'notes') setNotesContent(sanitizeHtmlForDisplay(quickClean));
+              else if (type === 'mindmap') setMindmapContent(quickClean);
+              else if (type === 'quiz') setQuizContent(sanitizeHtmlForDisplay(quickClean));
+              else if (type === 'flashcard') setFlashcardContent(sanitizeHtmlForDisplay(quickClean));
+            }
+
+            // 2) Full version replaces the outline when ready
+            const response = await callGeminiAPI(endpoint, prompt, { maxOutputTokens: 4096 });
             if (!response || response.length < 100) continue;
             const cleanedResponse = cleanHtmlResponse(response);
             if (!cleanedResponse || cleanedResponse.length < 50) throw new Error('Too short');
             switch (type) {
-              case 'notes': {
-                const sanitizedNotes = sanitizeHtmlForDisplay(cleanedResponse);
-                setNotesContent(sanitizedNotes);
-                break;
-              }
+              case 'notes': setNotesContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
               case 'mindmap': setMindmapContent(cleanedResponse); break;
               case 'quiz': setQuizContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
               case 'flashcard': setFlashcardContent(sanitizeHtmlForDisplay(cleanedResponse)); break;
@@ -703,11 +755,7 @@ export default function App() {
             return true;
           } catch (e) {
             const msg = (e?.message || '').toLowerCase();
-            // Skip to next endpoint on model-not-found/unsupported
-            if (msg.includes('404') || msg.includes('not found') || msg.includes('not supported')) {
-              lastError = e;
-              continue;
-            }
+            if (msg.includes('404') || msg.includes('not found') || msg.includes('not supported') || msg.includes('model')) { lastError = e; continue; }
             lastError = e;
           }
         }
@@ -983,10 +1031,58 @@ export default function App() {
       <main>
         <nav>
           <button className={activeTab === "input" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("input")}>📝 Input</button>
-          <button className={activeTab === "notes" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("notes")}>📚 Smart Notes</button>
-          <button className={activeTab === "mindmap" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("mindmap")}>🧠 Mind Map</button>
-          <button className={activeTab === "quiz" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("quiz")}>❓ Quiz</button>
-          <button className={activeTab === "flashcard" ? "tab-btn active" : "tab-btn"} onClick={() => handleTabChange("flashcard")}>🎴 Flashcards</button>
+          {(() => {
+            const enabled = !isGenerating || genProgress.notes === 'done';
+            return (
+              <button
+                className={activeTab === "notes" ? "tab-btn active" : "tab-btn"}
+                onClick={() => handleTabChange("notes")}
+                disabled={!enabled}
+                title={enabled ? "Open Smart Notes" : "Generating…"}
+              >
+                📚 Smart Notes {isGenerating ? statusIcon(genProgress.notes) : ''}
+              </button>
+            );
+          })()}
+          {(() => {
+            const enabled = !isGenerating || genProgress.mindmap === 'done';
+            return (
+              <button
+                className={activeTab === "mindmap" ? "tab-btn active" : "tab-btn"}
+                onClick={() => handleTabChange("mindmap")}
+                disabled={!enabled}
+                title={enabled ? "Open Mind Map" : "Generating…"}
+              >
+                🧠 Mind Map {isGenerating ? statusIcon(genProgress.mindmap) : ''}
+              </button>
+            );
+          })()}
+          {(() => {
+            const enabled = !isGenerating || genProgress.quiz === 'done';
+            return (
+              <button
+                className={activeTab === "quiz" ? "tab-btn active" : "tab-btn"}
+                onClick={() => handleTabChange("quiz")}
+                disabled={!enabled}
+                title={enabled ? "Open Quiz" : "Generating…"}
+              >
+                ❓ Quiz {isGenerating ? statusIcon(genProgress.quiz) : ''}
+              </button>
+            );
+          })()}
+          {(() => {
+            const enabled = !isGenerating || genProgress.flashcard === 'done';
+            return (
+              <button
+                className={activeTab === "flashcard" ? "tab-btn active" : "tab-btn"}
+                onClick={() => handleTabChange("flashcard")}
+                disabled={!enabled}
+                title={enabled ? "Open Flashcards" : "Generating…"}
+              >
+                🎴 Flashcards {isGenerating ? statusIcon(genProgress.flashcard) : ''}
+              </button>
+            );
+          })()}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <label htmlFor="langSelect" style={{ fontSize: '12px', opacity: 0.8 }}>Language:</label>
             <select
@@ -1084,15 +1180,15 @@ export default function App() {
 
         {activeTab === "notes" && (
           <section className="tab-panel active">
-            {isGenerating && genProgress.notes !== 'done' ? (
+            {(!notesContent && isGenerating) ? (
               <div style={{ textAlign: 'center', padding: '40px' }}>
                 <div className="loading-spinner" />
                 <p style={{ marginTop: '12px', fontWeight: '600' }}>Generating materials...</p>
                 <p style={{ marginTop: '8px', opacity: 0.9, fontSize: '14px' }}>
-                  Notes: {genProgress.notes} {'  •  '}
-                  Mind Map: {genProgress.mindmap} {'  •  '}
-                  Quiz: {genProgress.quiz} {'  •  '}
-                  Flashcards: {genProgress.flashcard}
+                  Notes {statusIcon(genProgress.notes)} {'  •  '}
+                  Mind Map {statusIcon(genProgress.mindmap)} {'  •  '}
+                  Quiz {statusIcon(genProgress.quiz)} {'  •  '}
+                  Flashcards {statusIcon(genProgress.flashcard)}
                 </p>
               </div>
             ) : notesContent ? (
@@ -1121,6 +1217,13 @@ export default function App() {
                 <div className="notes-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
                   <button onClick={() => downloadAsPdf(notesContentRef.current, 'Smart-Notes.pdf')}>📥 Download PDF</button>
                 </div>
+                {isGenerating && (
+                  <div style={{ textAlign: 'center', marginTop: '8px', opacity: 0.85, fontSize: '14px' }}>
+                    Mind Map {statusIcon(genProgress.mindmap)} {'  •  '}
+                    Quiz {statusIcon(genProgress.quiz)} {'  •  '}
+                    Flashcards {statusIcon(genProgress.flashcard)}
+                  </div>
+                )}
                 <div 
                   className="content-display"
                   ref={notesContentRef}
