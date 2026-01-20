@@ -24,9 +24,7 @@ const analytics = getAnalytics(app);
         const apiKey = "AIzaSyDYeFBdJYldCm-c6tb37vYc14OsC2Qxvyc";
         
         const API_ENDPOINTS = [
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
         ];
 
         // Elements
